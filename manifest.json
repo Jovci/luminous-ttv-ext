@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Luminous TTV",
+  "version": "0.9.0",
+  "description": "Avoid Twitch livestream ads by redirecting HLS playlists via a local relay",
+  "background": {
+    "service_worker": "ts/service_worker.js"
+  },
+  "permissions": [
+    "storage",
+    "declarativeNetRequest",
+    "alarms",
+    "tabs",
+    "activeTab",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "https://*.twitch.tv/*",
+    "https://usher.ttvnw.net/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*.amazon-adsystem.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*.twitch.tv/*"],
+      "js": ["assets/browser-polyfill.js", "ts/content.js"],
+      "css": ["css/content.css"]
+    }
+  ],
+  "options_ui": {
+    "page": "html/options.html",
+    "open_in_tab": false
+  },
+  "icons": {
+    "128": "images/icon.png"
+  },
+  "action": {
+    "default_title": "Set server address",
+    "default_popup": "html/options.html"
+  }
+}

@@ -1,7 +1,4 @@
-<!DOCTYPE html>
-
-<html lang="en">
-<head>
+<!DOCTYPE html><html lang="en"><head><script src="/assets/browser-polyfill.js"></script>
     <meta charset="utf-8">
     <title>Luminous TTV options</title>
     <style>
@@ -29,12 +26,12 @@
 <body style="min-width: 300px">
 <form>
     <label for="address">Server address</label>
-    <span><input type="text" id="address" pattern="https?:\/\/.*(?<!\/)$"></span>
-    <br/>
+    <span><input type="text" id="address" pattern="https?:\/\/.*(?&lt;!\/)$"></span>
+    <br>
     <button type="submit">Save</button>
 </form>
 <p>Restart your browser after saving.</p>
-<script src="../ts/options.ts"></script>
-</body>
+<script src="../ts/options.js" type="module"></script>
 
-</html>
+
+</body></html>

@@ -1,44 +1,87 @@
-## Luminous TTV browser extension
-A browser extension to avoid ads on Twitch. See [Luminous TTV][srv] for the other half
-of the code. Should work in any Chrome-like browser and Firefox.
 
-### Setup
+### MV2 -> 3
+- **MV2 deprecation**: Chrome is deprecating background pages/event pages used in MV2.
+- **Privacy constraints**: Blocking `webRequest` listeners are discouraged; MV3 prefers `declarativeNetRequest` (DNR).
+- **Reliability**: Needed handling when the local relay (proxy) starts/stops while the browser is running.
 
-Prerequisite: The [server][srv] must be running on your machine for this extension to work.
+### Changes
+- **Background → Service Worker**
+  - MV2: `ts/background.js` registered `webRequest.onBeforeRequest` and did sync XHR to the relay.
+  - MV3: `ts/service_worker.js` is the background service worker. It configures DNR rules and manages health checks/state.
 
-1. Download [the latest release][latest].
-2. Load the extension:
-   * Chrome: Open the Extensions page, enable *Developer mode*, and drag the ZIP onto
-     the page. Alternatively, use *Load unpacked* to load the contents of the ZIP file.
-   * Firefox: In the extensions tab, click the gear, select *Debug Add-ons*,
-     and use *Load Temporary Add-on*. Extension will be removed on every browser
-     restart.
+- **webRequest (blocking) → declarativeNetRequest**
+  - Redirects for Twitch HLS/VOD requests are implemented as DNR rules.
+  - Ad blocking for `amazon-adsystem.com` is a DNR dynamic rule.
 
-[latest]: https://github.com/AlyoshaVasilieva/luminous-ttv-ext/releases/latest
-[srv]: https://github.com/AlyoshaVasilieva/luminous-ttv
+- **Proactive health checks and instant rule flips**
+  - Periodic healthcheck via `chrome.alarms` against `${relay}/stat/`.
+  - Immediate re-evaluation on Twitch navigations (including SPA route changes) via `chrome.webNavigation` listeners.
+  - When offline, install explicit "allow" rules to bypass any stale redirects; when online, install session redirect rules.
 
-### Building
+- **User notifications (toast)**
+  - Content script `ts/content.js` displays toasts via `browser.runtime.onMessage`.
+  - The service worker sends an error message to Twitch tabs when the relay is offline, deduplicated by `lastRelayOnline` state.
 
-Prerequisite: Ensure [you have Node and NPM installed*][npm].
+### Files and responsibilities
+- `manifest.json`
+  - `manifest_version: 3`
+  - `background.service_worker: ts/service_worker.js`
+  - `permissions`: `storage`, `declarativeNetRequest`, `alarms`, `tabs`, `activeTab`, `webNavigation`
+  - `host_permissions`: Twitch domains, `usher.ttvnw.net`, and localhost (`http://localhost/*`, `http://127.0.0.1/*`).
+  - `content_scripts`: inject `assets/browser-polyfill.js` and `ts/content.js` on Twitch pages.
 
-1. `npm install`
-2. `npm run build`
-3. Extension files including ZIP are output to `dist` directory.
+- `ts/service_worker.js` (MV3)
+  - Builds DNR rules for live and VOD redirects (session rules) and ad-block (dynamic rule).
+  - Normalizes relay base address from storage.
+  - Periodically checks relay health and toggles rules.
+  - Reacts to Twitch navigations (`onBeforeNavigate`, `onHistoryStateUpdated`) to refresh rules immediately.
+  - Sends a toast message to Twitch tabs when transitioning to offline, with retry and a broadcast fallback.
 
-*: That link is the fast way. [Read this guide for the correct way][guide].
+- `ts/background.js` (legacy MV2)
+  - Kept in the repository for reference/other platforms. Not used by Chrome MV3.
+  - Previously performed synchronous XHR to fetch and inline M3U8 responses and blocked ad hosts via `webRequest`.
 
-[guide]: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-[npm]: https://nodejs.org/en/
+- `ts/content.js`
+  - Receives messages and shows toasts (bottom-center). Used for the offline warning.
 
-### Issues
+### Redirect logic in MV3 (DNR)
+- Live HLS:
+  - Match: `^https://usher\.ttvnw\.net/api/channel/hls/([^/?]+)\.m3u8(\?.*)?$`
+  - Redirect: `<base>/live/\1\2`
 
-* In Firefox, and browsers built using its code, the extension's error failsafe code 
-  can't be used. If the server isn't running, you won't be able to view any streams
-  on Twitch. (In Chrome-like browsers, this extension will fall back to the
-  ad-filled stream when anything goes wrong.)
-* A white pixel will appear in the bottom left of the Twitch page. This is an ad iframe
-  that fails to load due to being blocked.
+- VOD HLS:
+  - Match: `^https://usher\.ttvnw\.net/vod/([^/?]+)\.m3u8(\?.*)?$`
+  - Redirect: `<base>/vod/\1\2`
 
-### License
+- Ads block:
+  - Match: `^https?://([^.]+\.)?amazon-adsystem\.com/.*`
+  - Action: `block`
 
-GNU GPLv3.
+- Allow-bypass when offline:
+  - Same HLS/VOD matchers with `action: allow` and high priority, to ensure Twitch uses the original URL when relay is down.
+
+### Health and rule application flow
+- On install/startup:
+  - Remove any old dynamic redirect rules from prior versions.
+  - Add/update the ad-block dynamic rule.
+  - Remove session redirect rules (avoid stale redirects from prior sessions).
+  - Check relay health; if online, add session redirects; if offline, add allow-bypass rules.
+- On storage `address` change:
+  - Re-evaluate health for the new base and re-apply rules.
+- On alarm tick (every minute):
+  - Re-check health and re-apply rules.
+- On Twitch navigation/route changes:
+  - Re-check health and re-apply rules immediately for a snappy experience.
+
+### Permissions required in MV3
+- `declarativeNetRequest`: to install redirect/block/allow rules.
+- `webNavigation`: to react to Twitch navigations and SPA route changes.
+- `alarms`: for periodic relay health checks; the SW may sleep when idle.
+- `tabs`/`activeTab`: to send messages to the active or specific Twitch tab for toasts.
+- `host_permissions`: Twitch domains and relay host (`localhost`/`127.0.0.1`).
+
+
+### Notes and limitations
+- MV3 service worker can be suspended by the browser when idle; periodic alarms and navigation listeners are used to promptly re-apply state.
+- DNR rule counts are limited; used a small, fixed set of rule IDs for predictability.
+- The legacy MV2 background script remains for reference but is not used on Chrome MV3 builds.

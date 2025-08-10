@@ -1,10 +1,9 @@
-function saveOptions(e: SubmitEvent) {
+function saveOptions(e) {
     browser.storage.sync.set({
-        address: (document.querySelector("#address") as HTMLInputElement).value
+        address: document.querySelector("#address").value
     }).catch(e => console.log("failed to save options due to", e));
     e.preventDefault();
 }
-
 function restoreOptions() {
     const storage = browser.storage.sync.get(["address"]);
     storage.then((res) => {
@@ -14,6 +13,5 @@ function restoreOptions() {
         }
     });
 }
-
 document.addEventListener('DOMContentLoaded', restoreOptions);
 document.querySelector("form")?.addEventListener("submit", saveOptions);
